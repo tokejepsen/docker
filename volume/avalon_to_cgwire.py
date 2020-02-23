@@ -109,9 +109,15 @@ def update_asset(cgwire_project, avalon_asset):
     return cgwire_asset
 
 
-def get_sequence(cgwire_project, avalon_asset):
+def get_sequence(cgwire_project, avalon_asset, episode=None):
+    sequences = []
+    if episode:
+        sequences = gazu.shot.all_sequences_for_episode(episode)
+    else:
+        sequences = gazu.shot.all_sequences_for_project(cgwire_project)
+
     cgwire_sequence = None
-    for sequence in gazu.shot.all_sequences_for_project(cgwire_project):
+    for sequence in sequences:
         # Search for existing sequence with id.
         if sequence["data"].get("id", "") == str(avalon_asset["_id"]):
             print("Found existing sequence by id.")
@@ -128,14 +134,15 @@ def get_sequence(cgwire_project, avalon_asset):
         print("Creating new sequence.")
         cgwire_sequence = gazu.shot.new_sequence(
             cgwire_project,
-            avalon_asset["name"]
+            avalon_asset["name"],
+            episode=episode
         )
 
     return cgwire_sequence
 
 
-def update_sequence(cgwire_project, avalon_asset):
-    cgwire_sequence = get_sequence(cgwire_project, avalon_asset)
+def update_sequence(cgwire_project, avalon_asset, episode=None):
+    cgwire_sequence = get_sequence(cgwire_project, avalon_asset, episode)
 
     # Update asset data.
     data = json.loads(json_util.dumps(avalon_asset["data"]))
@@ -148,6 +155,48 @@ def update_sequence(cgwire_project, avalon_asset):
     gazu.shot.update_sequence(cgwire_sequence)
 
     return cgwire_sequence
+
+
+def get_episode(cgwire_project, avalon_asset):
+    cgwire_episode = None
+    for episode in gazu.shot.all_episodes_for_project(cgwire_project):
+        # Search for existing sequence with id.
+        if episode["data"]:
+            if episode["data"].get("id", "") == str(avalon_asset["_id"]):
+                print("Found existing episode by id.")
+                cgwire_episode = episode
+                break
+
+        # Search for existing sequence with label/name.
+        name = avalon_asset["data"].get("label", avalon_asset["name"])
+        if episode["name"] == name:
+            print("Found existing episode by label/name.")
+            cgwire_episode = episode
+
+    if cgwire_episode is None:
+        print("Creating new episode.")
+        cgwire_episode = gazu.shot.new_episode(
+            cgwire_project,
+            avalon_asset["name"]
+        )
+
+    return cgwire_episode
+
+
+def update_episode(cgwire_project, avalon_asset):
+    cgwire_episode = get_episode(cgwire_project, avalon_asset)
+
+    # Update asset data.
+    data = json.loads(json_util.dumps(avalon_asset["data"]))
+    data["id"] = str(avalon_asset["_id"])
+
+    cgwire_episode.update({
+        "data": data,
+        "name": avalon_asset["data"].get("label", avalon_asset["name"])
+    })
+    gazu.shot.update_episode(cgwire_episode)
+
+    return cgwire_episode
 
 
 def get_shot(cgwire_project, cgwire_sequence, avalon_asset):
@@ -232,4 +281,12 @@ for name in db.collection_names():
             second_visual_parent = db[name].find_one(
                 {"_id": first_visual_parent["data"]["visualParent"]}
             )
-            print("Found episode: {}".format(second_visual_parent))
+
+            if not second_visual_parent["data"].get("visualParent", None):
+                cgwire_episode = update_episode(
+                    cgwire_project, second_visual_parent
+                )
+                cgwire_sequence = update_sequence(
+                    cgwire_project, first_visual_parent, episode=cgwire_episode
+                )
+                update_shot(cgwire_project, cgwire_sequence, asset)
