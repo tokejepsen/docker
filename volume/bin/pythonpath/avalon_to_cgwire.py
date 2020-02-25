@@ -6,16 +6,6 @@ from bson import json_util
 import gazu
 
 
-print("Logging in..")
-gazu.client.set_host("http://127.0.0.1/api")
-gazu.log_in("admin@example.com", "mysecretpassword")
-print("Logged in..")
-
-
-# Mapping.
-silo_mapping = {"film": "shot", "assets": "asset"}
-
-
 def get_project(avalon_project):
     for project in gazu.project.all_projects():
         if project["data"].get("id", "") == str(avalon_project["_id"]):
@@ -23,7 +13,7 @@ def get_project(avalon_project):
             return project
 
     print("Creating new project")
-    return gazu.project.new_project(name)
+    return gazu.project.new_project(avalon_project["name"])
 
 
 def update_project(avalon_project):
@@ -249,44 +239,53 @@ def update_shot(cgwire_project, cgwire_sequence, avalon_asset):
     return cgwire_shot
 
 
-# Collect all projects data in Mongo.
-client = pymongo.MongoClient(os.environ["AVALON_MONGO"])
-db = client["avalon"]
+def full_sync():
+    print("Logging in..")
+    gazu.client.set_host("http://127.0.0.1/api")
+    gazu.log_in("admin@example.com", "mysecretpassword")
+    print("Logged in..")
 
-for name in db.collection_names():
-    cgwire_project = update_project(db[name].find_one({"type": "project"}))
-    for asset in db[name].find({"type": "asset"}):
-        if silo_mapping[asset["silo"]] == "asset":
-            update_asset(cgwire_project, asset)
+    # Mapping.
+    silo_mapping = {"film": "shot", "assets": "asset"}
 
-        if silo_mapping[asset["silo"]] == "shot":
-            # Query visual parents for hierarchy.
-            # No visual parent == skip. CGWire requires a sequence minimum.
-            if not asset["data"].get("visualParent", None):
-                continue
+    # Collect all projects data in Mongo.
+    client = pymongo.MongoClient(os.environ["AVALON_MONGO"])
+    db = client["avalon"]
 
-            # One visual parent == sequence.
-            first_visual_parent = db[name].find_one(
-                {"_id": asset["data"]["visualParent"]}
-            )
+    for name in db.collection_names():
+        cgwire_project = update_project(db[name].find_one({"type": "project"}))
+        for asset in db[name].find({"type": "asset"}):
+            if silo_mapping[asset["silo"]] == "asset":
+                update_asset(cgwire_project, asset)
 
-            if not first_visual_parent["data"].get("visualParent", None):
-                cgwire_sequence = update_sequence(
-                    cgwire_project, first_visual_parent
+            if silo_mapping[asset["silo"]] == "shot":
+                # Query visual parents for hierarchy.
+                # No visual parent == skip. CGWire requires a sequence minimum.
+                if not asset["data"].get("visualParent", None):
+                    continue
+
+                # One visual parent == sequence.
+                first_visual_parent = db[name].find_one(
+                    {"_id": asset["data"]["visualParent"]}
                 )
-                update_shot(cgwire_project, cgwire_sequence, asset)
-                continue
 
-            # Two visual parents == episode/sequence.
-            second_visual_parent = db[name].find_one(
-                {"_id": first_visual_parent["data"]["visualParent"]}
-            )
+                if not first_visual_parent["data"].get("visualParent", None):
+                    cgwire_sequence = update_sequence(
+                        cgwire_project, first_visual_parent
+                    )
+                    update_shot(cgwire_project, cgwire_sequence, asset)
+                    continue
 
-            if not second_visual_parent["data"].get("visualParent", None):
-                cgwire_episode = update_episode(
-                    cgwire_project, second_visual_parent
+                # Two visual parents == episode/sequence.
+                second_visual_parent = db[name].find_one(
+                    {"_id": first_visual_parent["data"]["visualParent"]}
                 )
-                cgwire_sequence = update_sequence(
-                    cgwire_project, first_visual_parent, episode=cgwire_episode
-                )
-                update_shot(cgwire_project, cgwire_sequence, asset)
+
+                if not second_visual_parent["data"].get("visualParent", None):
+                    cgwire_episode = update_episode(
+                        cgwire_project, second_visual_parent
+                    )
+                    cgwire_sequence = update_sequence(
+                        cgwire_project, first_visual_parent, episode=cgwire_episode
+                    )
+                    update_shot(cgwire_project, cgwire_sequence, asset)
