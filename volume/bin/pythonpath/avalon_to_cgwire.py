@@ -31,13 +31,13 @@ def get_entity(project, avalon_asset, cgwire_type):
     for entity in modules[cgwire_type](project):
         # Search for existing asset with id.
         if entity["data"].get("avalon_id", "") == str(avalon_asset["_id"]):
-            print("Found existing asset by id.")
+            print("Found existing {} by id.".format(cgwire_type))
             return entity
 
         # Search for existing asset with label/name.
         name = avalon_asset["data"].get("label", avalon_asset["name"])
         if entity["name"] == name:
-            print("Found existing asset by label/name.")
+            print("Found existing {} by label/name.".format(cgwire_type))
             return entity
 
 
@@ -53,10 +53,11 @@ def get_asset(cgwire_project, avalon_asset):
                 avalon_asset["name"]
             )
         )
+        # There are no asset type in Avalon, so we take the first
+        # available asset type.
         cgwire_asset = gazu.asset.new_asset(
             cgwire_project,
-            gazu.asset.all_asset_types()[0],  # There are no default asset type
-            # in Avalon, so we take the first available asset type.
+            gazu.asset.all_asset_types()[0],
             avalon_asset["name"]
         )
 
@@ -155,6 +156,23 @@ def update_project(avalon_project):
     return cgwire_project
 
 
+def update_entity(avalon_entity, cgwire_entity, cgwire_type):
+    data = json.loads(json_util.dumps(avalon_entity["data"]))
+    data["avalon_id"] = str(avalon_entity["_id"])
+
+    cgwire_entity.update({
+        "data": data,
+        "name": avalon_entity["data"].get("label", avalon_entity["name"])
+    })
+    modules = {
+        "asset": gazu.asset.update_asset,
+        "episode": gazu.shot.update_episode,
+        "sequence": gazu.shot.update_sequence,
+        "shot": gazu.shot.update_shot
+    }
+    modules[cgwire_type](cgwire_entity)
+
+
 def update_asset(cgwire_project, avalon_asset):
     cgwire_asset = get_asset(cgwire_project, avalon_asset)
 
@@ -166,49 +184,28 @@ def update_asset(cgwire_project, avalon_asset):
         )
     avalon_asset["data"].pop("tasks", None)
 
-    # Update asset data.
-    data = json.loads(json_util.dumps(avalon_asset["data"]))
-    data["avalon_id"] = str(avalon_asset["_id"])
-
-    cgwire_asset.update({
-        "data": data,
-        "name": avalon_asset["data"].get("label", avalon_asset["name"])
-    })
-    gazu.asset.update_asset(cgwire_asset)
+    # Update data.
+    update_entity(avalon_asset, cgwire_asset, "asset")
 
     return cgwire_asset
-
-
-def update_sequence(cgwire_project, avalon_asset, episode=None):
-    cgwire_sequence = get_sequence(cgwire_project, avalon_asset, episode)
-
-    # Update asset data.
-    data = json.loads(json_util.dumps(avalon_asset["data"]))
-    data["avalon_id"] = str(avalon_asset["_id"])
-
-    cgwire_sequence.update({
-        "data": data,
-        "name": avalon_asset["data"].get("label", avalon_asset["name"])
-    })
-    gazu.shot.update_sequence(cgwire_sequence)
-
-    return cgwire_sequence
 
 
 def update_episode(cgwire_project, avalon_asset):
     cgwire_episode = get_episode(cgwire_project, avalon_asset)
 
-    # Update asset data.
-    data = json.loads(json_util.dumps(avalon_asset["data"]))
-    data["avalon_id"] = str(avalon_asset["_id"])
-
-    cgwire_episode.update({
-        "data": data,
-        "name": avalon_asset["data"].get("label", avalon_asset["name"])
-    })
-    gazu.shot.update_episode(cgwire_episode)
+    # Update data.
+    update_entity(avalon_asset, cgwire_episode, "episode")
 
     return cgwire_episode
+
+
+def update_sequence(cgwire_project, avalon_asset, episode=None):
+    cgwire_sequence = get_sequence(cgwire_project, avalon_asset, episode)
+
+    # Update data.
+    update_entity(avalon_asset, cgwire_sequence, "sequence")
+
+    return cgwire_sequence
 
 
 def update_shot(cgwire_project, cgwire_sequence, avalon_asset):
@@ -223,14 +220,7 @@ def update_shot(cgwire_project, cgwire_sequence, avalon_asset):
     avalon_asset["data"].pop("tasks", None)
 
     # Update asset data.
-    data = json.loads(json_util.dumps(avalon_asset["data"]))
-    data["avalon_id"] = str(avalon_asset["_id"])
-
-    cgwire_shot.update({
-        "data": data,
-        "name": avalon_asset["data"].get("label", avalon_asset["name"])
-    })
-    gazu.shot.update_shot(cgwire_shot)
+    update_entity(avalon_asset, cgwire_shot, "shot")
 
     return cgwire_shot
 
