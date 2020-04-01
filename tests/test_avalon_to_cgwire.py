@@ -19,6 +19,8 @@ os.environ["AVALON_ASSET"] = "bruce"
 os.environ["AVALON_SILO"] = "assets"
 avalon.io.install()
 
+project_name = "batman"
+
 
 @contextlib.contextmanager
 def setup():
@@ -36,6 +38,9 @@ def teardown():
         for sequence in gazu.shot.all_sequences_for_project(project):
             gazu.shot.remove_sequence(sequence)
 
+        for episode in gazu.shot.all_episodes_for_project(project):
+            gazu.shot.remove_episode(episode)
+
         # CGWire projects needs to be closed before deletion.
         gazu.project.close_project(project)
         gazu.project.remove_project(project, force=True)
@@ -46,7 +51,7 @@ def teardown():
 @with_setup(setup, teardown)
 def test_project_sync():
     """Syncing project from Avalon to CGWire works."""
-    project_name = "batman"
+
     project_id = avalon.inventory.create_project(project_name)
     client = pymongo.MongoClient(os.environ["AVALON_MONGO"])
     db = client["avalon"]
@@ -72,7 +77,7 @@ def test_project_sync():
 @with_setup(setup, teardown)
 def test_asset_sync():
     """Syncing asset from Avalon to CGWire works."""
-    project_name = "batman"
+
     project_id = avalon.inventory.create_project(project_name)
     asset_id = avalon.inventory.create_asset(
         "Bruce", "assets", {"tasks": ["modeling"]}, project_id
@@ -102,7 +107,7 @@ def test_asset_sync():
 @with_setup(setup, teardown)
 def test_sequence_sync():
     """Syncing sequence from Avalon to CGWire works."""
-    project_name = "batman"
+
     project_id = avalon.inventory.create_project(project_name)
     sequence_id = avalon.inventory.create_asset(
         "sequence", "film", {}, project_id
@@ -141,5 +146,55 @@ def test_sequence_sync():
     ]
     assert avalon_shot["data"]["tasks"] == cgwire_tasks
 
-# Avalon sequence/shot to CGWire sequence/shot: sequence name, sequence id, shot name, shot tasks, shot id.
-# Avalon episode/sequence/shot to CGWire episode/sequence/shot: episode name, episode tasks, episode id, sequence name, sequence tasks, sequence id, shot name, shot tasks, shot id.
+
+@with_setup(setup, teardown)
+def test_episode_sync():
+    """Syncing episode from Avalon to CGWire works."""
+
+    project_id = avalon.inventory.create_project(project_name)
+    episode_id = avalon.inventory.create_asset(
+        "episode", "film", {}, project_id
+    )
+    sequence_id = avalon.inventory.create_asset(
+        "sequence", "film", {"visualParent": episode_id}, project_id
+    )
+    shot_id = avalon.inventory.create_asset(
+        "shot",
+        "film",
+        {"tasks": ["layout"], "visualParent": sequence_id},
+        project_id
+    )
+
+    client = pymongo.MongoClient(os.environ["AVALON_MONGO"])
+    db = client["avalon"]
+    avalon_episode = db[project_name].find_one({"_id": episode_id})
+    avalon_sequence = db[project_name].find_one({"_id": sequence_id})
+    avalon_shot = db[project_name].find_one({"_id": shot_id})
+
+    avalon_to_cgwire.full_sync()
+
+    # There should only be one project in CGWire at this point.
+    cgwire_project = gazu.project.all_projects()[0]
+
+    # There should only be one episode in CGWire at this point.
+    cgwire_episode = gazu.shot.all_episodes_for_project(cgwire_project)[0]
+
+    assert avalon_episode["name"] == cgwire_episode["name"]
+    assert str(avalon_episode["_id"]) == cgwire_episode["data"]["avalon_id"]
+
+    # There should only be one sequence in CGWire at this point.
+    cgwire_sequence = gazu.shot.all_sequences_for_project(cgwire_project)[0]
+
+    assert avalon_sequence["name"] == cgwire_sequence["name"]
+    assert str(avalon_sequence["_id"]) == cgwire_sequence["data"]["avalon_id"]
+
+    # There should only be one shot in CGWire at this point.
+    cgwire_shot = gazu.shot.all_shots_for_project(cgwire_project)[0]
+
+    assert avalon_shot["name"] == cgwire_shot["name"]
+    assert str(avalon_shot["_id"]) == cgwire_shot["data"]["avalon_id"]
+
+    cgwire_tasks = [
+        task["name"] for task in gazu.task.all_tasks_for_shot(cgwire_shot)
+    ]
+    assert avalon_shot["data"]["tasks"] == cgwire_tasks
