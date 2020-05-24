@@ -19,6 +19,10 @@ os.environ["AVALON_ASSET"] = "bruce"
 os.environ["AVALON_SILO"] = "assets"
 avalon.io.install()
 
+os.environ["CGWIRE_HOST"] = "http://127.0.0.1/api"
+os.environ["CGWIRE_USERNAME"] = "admin@example.com"
+os.environ["CGWIRE_PASSWORD"] = "mysecretpassword"
+
 project_name = "batman"
 
 
